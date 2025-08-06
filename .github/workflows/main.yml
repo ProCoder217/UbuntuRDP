@@ -1,5 +1,5 @@
 name: XRDP with XFCE and bore.pub (6h max)
-
+uses: vegardit/fast-apt-mirror.sh@v1
 on:
   workflow_dispatch:
 

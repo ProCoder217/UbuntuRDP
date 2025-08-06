@@ -51,7 +51,7 @@ jobs:
 
       - name: Download and run bore.pub tunnel (Expose port 3389)
         run: |
-          wget https://github.com/ekzhang/bore/releases/download/v0.4.1/bore-x86_64-unknown-linux-gnu.tar.gz -O bore.tar.gz
+          wget https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-unknown-linux-musl.tar.gz -O bore.tar.gz
           tar -xzf bore.tar.gz
           chmod +x bore
           ./bore local 3389 --to bore.pub > bore-url.txt 2>&1 &

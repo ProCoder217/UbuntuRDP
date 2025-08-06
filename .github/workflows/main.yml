@@ -11,9 +11,10 @@ jobs:
     steps:
       - name: Optimize APT performance (fast mirror + apt-fast + disable triggers)
         run: |
-          # Select fastest mirror
-          sudo apt-get update && sudo apt-get install -y curl
-          curl -sL https://raw.githubusercontent.com/vegardit/fast-apt-mirror/master/fast-apt-mirror.sh | sudo bash
+          # Download and apply the fastest APT mirror
+          wget https://raw.githubusercontent.com/vegardit/fast-apt-mirror.sh/v1/fast-apt-mirror.sh -O fast-apt-mirror.sh
+          chmod +x fast-apt-mirror.sh
+          sudo ./fast-apt-mirror.sh find --apply
 
           # Disable unnecessary dpkg triggers
           sudo rm -f /var/lib/man-db/auto-update
@@ -48,7 +49,7 @@ jobs:
           sudo cp ~/.xsession /home/topuser/.xsession
           sudo chown -R topuser:topuser /home/topuser
 
-      - name: Download & run bore.pub tunnel (Expose port 3389)
+      - name: Download and run bore.pub tunnel (Expose port 3389)
         run: |
           wget https://github.com/ekzhang/bore/releases/download/v0.4.1/bore-x86_64-unknown-linux-gnu.tar.gz -O bore.tar.gz
           tar -xzf bore.tar.gz
@@ -68,5 +69,5 @@ jobs:
           echo ""
           echo "🌐 Connect via bore.pub tunnel:"
           cat bore-url.txt || echo "URL not available."
-          echo "Use a standard RDP client (like Remmina, mstsc, or FreeRDP) to connect."
+          echo "Use a standard RDP client (Remmina, mstsc, FreeRDP, etc) to connect."
           echo "======================================"

@@ -1,0 +1,50 @@
+name: Ubuntu GNOME XRDP via bore
+
+on: [push, workflow_dispatch]
+
+jobs:
+  xrdp-via-bore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours
+
+    steps:
+    - name: Update and install prerequisites
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xrdp ubuntu-gnome-desktop dbus-x11
+        sudo systemctl enable xrdp
+        sudo systemctl start xrdp
+
+    - name: Set up user 'topuser'
+      run: |
+        # Create user with specified password
+        sudo useradd -m -s /bin/bash topuser
+        echo 'topuser:T0pUser#25' | sudo chpasswd
+        # Add to required groups (optional: for desktop/session access)
+        sudo usermod -aG sudo topuser
+        # Set GNOME as default desktop for xrdp sessions
+        echo "gnome-session" > /home/topuser/.xsession
+        sudo chown topuser:topuser /home/topuser/.xsession
+
+    - name: Download rustup-init.sh
+      run: curl https://sh.rustup.rs -sSf -o rustup-init.sh
+
+    - name: Install Rust
+      run: |
+        chmod +x rustup-init.sh
+        ./rustup-init.sh -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install bore-cli
+      run: cargo install bore-cli
+
+    - name: Start bore tunnel for XRDP (port 3389)
+      run: |
+        nohup $HOME/.cargo/bin/bore local 3389 --to bore.pub > bore.log 2>&1 &
+        echo "XRDP tunnel started. Keeping runner alive for 6 hours..."
+        sleep 21600
+
+    - name: Print bore log (for debugging)
+      if: always()
+      run: cat bore.log
+      

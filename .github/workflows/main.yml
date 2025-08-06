@@ -1,5 +1,5 @@
 name: XRDP with XFCE and bore.pub (6h max)
-uses: vegardit/fast-apt-mirror.sh@v1
+
 on:
   workflow_dispatch:
 
@@ -9,6 +9,8 @@ jobs:
     timeout-minutes: 360  # Maximum allowed duration for GitHub-hosted runners (6 hours)
     
     steps:
+      - name: Add fast mirror
+        uses: vegardit/fast-apt-mirror.sh@v1
       - name: Update & Install XRDP + XFCE (minimal)
         run: |
           sudo apt-get update

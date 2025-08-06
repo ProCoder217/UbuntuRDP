@@ -1,47 +1,48 @@
-name: Ubuntu XFCE XRDP via bore
+name: XRDP with XFCE and bore.pub (6h max)
 
-on: [push, workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
-  xrdp-via-bore:
+  run-xrdp:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # Run up to 6 hours
-
+    timeout-minutes: 360  # Maximum allowed duration for GitHub-hosted runners (6 hours)
+    
     steps:
-    - name: Install XFCE desktop and XRDP
-      run: |
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xrdp xfce4 xfce4-goodies dbus-x11
+      - name: Update & Install XRDP + XFCE (minimal)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xrdp xfce4 dbus-x11
+          echo "xfce4-session" > ~/.xsession
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
 
-    - name: Create user 'topuser' and set password
-      run: |
-        sudo useradd -m -s /bin/bash topuser
-        echo 'topuser:T0pUser#25' | sudo chpasswd
-        sudo usermod -aG sudo topuser
+      - name: Create admin user 'topuser' with password
+        run: |
+          sudo adduser --disabled-password --gecos "" topuser
+          echo 'topuser:A@12345' | sudo chpasswd
+          sudo usermod -aG sudo topuser
+          sudo mkdir -p /home/topuser
+          sudo cp /home/runner/.xsession /home/topuser/
+          sudo chown -R topuser:topuser /home/topuser
 
-    - name: Configure XRDP to use XFCE
-      run: |
-        echo "startxfce4" | sudo tee /home/topuser/.xsession > /dev/null
-        sudo chown topuser:topuser /home/topuser/.xsession
+      - name: Download and run bore.pub (Expose port 3389)
+        run: |
+          wget https://github.com/ekzhang/bore/releases/download/v0.4.1/bore-x86_64-unknown-linux-gnu.tar.gz -O bore.tar.gz
+          tar -xzf bore.tar.gz
+          chmod +x bore
+          ./bore local 3389 --to bore.pub > bore-url.txt 2>&1 &
+          sleep 5
+          cat bore-url.txt
 
-    - name: Enable XRDP
-      run: |
-        sudo systemctl enable xrdp
-        sudo systemctl restart xrdp
-
-    - name: Install Rust and bore-cli
-      run: |
-        curl https://sh.rustup.rs -sSf -o rustup-init.sh
-        chmod +x rustup-init.sh
-        ./rustup-init.sh -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        source $HOME/.cargo/env
-        cargo install bore-cli
-
-    - name: Start bore tunnel for XRDP (port 3389)
-      run: |
-        echo "📡 Starting bore tunnel on port 3389"
-        $HOME/.cargo/bin/bore local 3389 --to bore.pub &
-        sleep 5  # Wait a few seconds for bore to connect
-        echo "✅ Bore is likely connected. Keeping job alive for 6 hours..."
-        sleep 21600  # 6 hours
+      - name: Show XRDP connection info
+        run: |
+          echo "==============================================="
+          echo "✅ XRDP with XFCE is ready via bore.pub!"
+          echo "🔐 Login credentials:"
+          echo "   Username: topuser"
+          echo "   Password: A@12345"
+          echo ""
+          echo "🌍 Public bore.pub tunnel info (check logs above):"
+          cat bore-url.txt || echo 'URL not captured.'
+          echo "==============================================="

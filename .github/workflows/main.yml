@@ -5,32 +5,33 @@ on: [push, workflow_dispatch]
 jobs:
   xrdp-via-bore:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours
+    timeout-minutes: 360  # Run up to 6 hours
 
     steps:
-    - name: Update and install prerequisites
+    - name: Install XRDP and GNOME Desktop
       run: |
         sudo apt-get update
-        sudo apt-get install -y xrdp ubuntu-gnome-desktop dbus-x11
-        sudo systemctl enable xrdp
-        sudo systemctl start xrdp
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xrdp ubuntu-gnome-desktop dbus-x11
 
-    - name: Set up user 'topuser'
+    - name: Create user 'topuser' with password
       run: |
-        # Create user with specified password
         sudo useradd -m -s /bin/bash topuser
         echo 'topuser:T0pUser#25' | sudo chpasswd
-        # Add to required groups (optional: for desktop/session access)
         sudo usermod -aG sudo topuser
-        # Set GNOME as default desktop for xrdp sessions
-        echo "gnome-session" > /home/topuser/.xsession
+
+    - name: Set GNOME session for xrdp
+      run: |
+        echo "gnome-session" | sudo tee /home/topuser/.xsession
         sudo chown topuser:topuser /home/topuser/.xsession
 
-    - name: Download rustup-init.sh
-      run: curl https://sh.rustup.rs -sSf -o rustup-init.sh
+    - name: Enable XRDP service
+      run: |
+        sudo systemctl enable xrdp
+        sudo systemctl restart xrdp
 
     - name: Install Rust
       run: |
+        curl https://sh.rustup.rs -sSf -o rustup-init.sh
         chmod +x rustup-init.sh
         ./rustup-init.sh -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
@@ -40,11 +41,12 @@ jobs:
 
     - name: Start bore tunnel for XRDP (port 3389)
       run: |
-        nohup $HOME/.cargo/bin/bore local 3389 --to bore.pub > bore.log 2>&1 &
-        echo "XRDP tunnel started. Keeping runner alive for 6 hours..."
-        sleep 21600
+        nohup $HOME/.cargo/bin/bore local 3389 --to bore.pub > $GITHUB_WORKSPACE/bore.log 2>&1 &
+        echo "Tunnel started. Waiting..."
+        sleep 21600  # 6 hours
 
-    - name: Print bore log (for debugging)
+    - name: Print bore log
       if: always()
-      run: cat bore.log
-      
+      run: |
+        echo "Tunnel log output:"
+        cat $GITHUB_WORKSPACE/bore.log

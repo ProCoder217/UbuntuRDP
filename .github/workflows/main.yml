@@ -1,4 +1,4 @@
-name: XRDP with XFCE and bore.pub (6h max)
+name: XRDP with XFCE and bore.pub (Optimized)
 
 on:
   workflow_dispatch:
@@ -6,29 +6,49 @@ on:
 jobs:
   run-xrdp:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # Maximum allowed duration for GitHub-hosted runners (6 hours)
-    
+    timeout-minutes: 360
+
     steps:
-      - name: Add fast mirror
-        uses: vegardit/fast-apt-mirror.sh@v1
-      - name: Update & Install XRDP + XFCE (minimal)
+      - name: Optimize APT performance (fast mirror + apt-fast + disable triggers)
         run: |
+          # Select fastest mirror
+          sudo apt-get update && sudo apt-get install -y curl
+          curl -sL https://raw.githubusercontent.com/vegardit/fast-apt-mirror/master/fast-apt-mirror.sh | sudo bash
+
+          # Disable unnecessary dpkg triggers
+          sudo rm -f /var/lib/man-db/auto-update
+          echo 'path-exclude=/usr/share/man/*' | sudo tee /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null
+          sudo dpkg-divert --local --rename --add /sbin/initctl
+          echo -e '#!/bin/sh\nexit 0' | sudo tee /sbin/initctl > /dev/null
+          sudo chmod +x /sbin/initctl
+
+          # Install apt-fast for faster package installs
+          sudo add-apt-repository -y ppa:apt-fast/stable
           sudo apt-get update
-          sudo apt-get install -y xrdp xfce4 dbus-x11
+          sudo apt-get install -y apt-fast
+          echo debconf apt-fast/maxdownloads string 16 | sudo debconf-set-selections
+          echo debconf apt-fast/dlflag boolean true | sudo debconf-set-selections
+          echo debconf apt-fast/aptmanager string apt-get | sudo debconf-set-selections
+
+      - name: Install XRDP and XFCE
+        run: |
+          sudo apt-fast update
+          sudo apt-fast install -y xrdp xfce4 dbus-x11
           echo "xfce4-session" > ~/.xsession
+          sudo cp ~/.xsession /etc/skel/.xsession
           sudo systemctl enable xrdp
           sudo systemctl start xrdp
 
-      - name: Create admin user 'topuser' with password
+      - name: Create admin user 'topuser'
         run: |
           sudo adduser --disabled-password --gecos "" topuser
           echo 'topuser:A@12345' | sudo chpasswd
           sudo usermod -aG sudo topuser
           sudo mkdir -p /home/topuser
-          sudo cp /home/runner/.xsession /home/topuser/
+          sudo cp ~/.xsession /home/topuser/.xsession
           sudo chown -R topuser:topuser /home/topuser
 
-      - name: Download and run bore.pub (Expose port 3389)
+      - name: Download & run bore.pub tunnel (Expose port 3389)
         run: |
           wget https://github.com/ekzhang/bore/releases/download/v0.4.1/bore-x86_64-unknown-linux-gnu.tar.gz -O bore.tar.gz
           tar -xzf bore.tar.gz
@@ -37,14 +57,16 @@ jobs:
           sleep 5
           cat bore-url.txt
 
-      - name: Show XRDP connection info
+      - name: Display remote desktop access info
         run: |
-          echo "==============================================="
-          echo "✅ XRDP with XFCE is ready via bore.pub!"
-          echo "🔐 Login credentials:"
-          echo "   Username: topuser"
-          echo "   Password: A@12345"
           echo ""
-          echo "🌍 Public bore.pub tunnel info (check logs above):"
-          cat bore-url.txt || echo 'URL not captured.'
-          echo "==============================================="
+          echo "======================================"
+          echo "✅ XRDP with XFCE is ready!"
+          echo "🔐 Credentials:"
+          echo "Username: topuser"
+          echo "Password: A@12345"
+          echo ""
+          echo "🌐 Connect via bore.pub tunnel:"
+          cat bore-url.txt || echo "URL not available."
+          echo "Use a standard RDP client (like Remmina, mstsc, or FreeRDP) to connect."
+          echo "======================================"

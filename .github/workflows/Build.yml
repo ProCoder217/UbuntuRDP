@@ -29,7 +29,7 @@ jobs:
       TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with LFS
         uses: actions/checkout@v4
         with:
           lfs: true
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Git LFS
         run: git lfs install
 
-      - name: Set up Docker
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
@@ -52,46 +52,59 @@ jobs:
           elif [ "$GUI" = "mate" ]; then DE="mate-desktop-environment"
           elif [ "$GUI" = "cinnamon" ]; then DE="cinnamon"
           elif [ "$GUI" = "lxqt" ]; then DE="lxqt"
-          else echo "Unknown GUI" && exit 1
+          else
+            echo "Unknown GUI: $GUI"
+            exit 1
+          fi
 
           if [ "$PROTO" = "vnc" ]; then SRV="tigervnc-standalone-server"
           elif [ "$PROTO" = "xrdp" ]; then SRV="xrdp"
-          else echo "Unknown protocol" && exit 1
+          else
+            echo "Unknown Protocol: $PROTO"
+            exit 1
+          fi
 
-          echo "
+          echo "Building image: $TAG with $DE and $SRV"
+
+          # Write Dockerfile using here-document
+          cat <<EOF > Dockerfile
           FROM ubuntu:22.04
           ENV DEBIAN_FRONTEND=noninteractive
-          RUN apt-get update && \
-              apt-get install -y $DE $SRV sudo && \
-              useradd -m linuxuser && \
-              echo 'linuxuser:Ab@1234' | chpasswd && \
-              echo 'root:Ab@1234' | chpasswd && \
+          RUN apt-get update && \\
+              apt-get install -y $DE $SRV sudo && \\
+              useradd -m linuxuser && \\
+              echo 'linuxuser:Ab@1234' | chpasswd && \\
+              echo 'root:Ab@1234' | chpasswd && \\
               usermod -aG sudo linuxuser
           COPY entrypoint.sh /entrypoint.sh
           RUN chmod +x /entrypoint.sh
-          ENTRYPOINT [\"/entrypoint.sh\"]" > Dockerfile
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOF
 
-          echo "#!/bin/bash
+          # Write entrypoint.sh using here-document
+          cat <<'EOF' > entrypoint.sh
+          #!/bin/bash
           set -e
-          if [ \"\$1\" = \"vnc\" ]; then
-            su - linuxuser -c \"vncserver :1 -geometry 1280x720\"
-          elif [ \"\$1\" = \"xrdp\" ]; then
-            service xrdp start || xrdp-sesman &
+          if [ "$1" = "vnc" ]; then
+            su - linuxuser -c "vncserver :1 -geometry 1280x720"
+          elif [ "$1" = "xrdp" ]; then
+            service xrdp start || (xrdp-sesman &)
           fi
-          tail -f /dev/null" > entrypoint.sh
+          tail -f /dev/null
+          EOF
 
           docker build -t "$TAG" .
 
-      - name: Save Docker image as .tar
+      - name: Save Docker image as tarball
         run: |
           mkdir -p tars
           docker save "$TAG" -o "tars/$TAG.tar"
 
-      - name: Track with Git LFS and commit
+      - name: Track tarball with Git LFS and commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git lfs track "tars/$TAG.tar"
           git add .gitattributes tars/$TAG.tar
-          git commit -m "Add $TAG Docker image as LFS object"
+          git commit -m "Add Docker image $TAG as LFS object"
           git push

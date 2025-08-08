@@ -1,4 +1,4 @@
-name: Build and Upload One GUI Image as Artifact
+name: Build and Commit One GUI Image via LFS
 
 on:
   workflow_dispatch:
@@ -23,14 +23,19 @@ on:
           - xrdp
 
 jobs:
-  build-upload:
+  build-commit:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Git LFS
+        run: git lfs install
 
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
@@ -47,13 +52,14 @@ jobs:
           elif [ "$GUI" = "mate" ]; then DE="mate-desktop-environment"
           elif [ "$GUI" = "cinnamon" ]; then DE="cinnamon"
           elif [ "$GUI" = "lxqt" ]; then DE="lxqt"
-          else echo "Unknown GUI: $GUI" && exit 1; fi
+          else echo "Unknown GUI" && exit 1
 
           if [ "$PROTO" = "vnc" ]; then SRV="tigervnc-standalone-server"
           elif [ "$PROTO" = "xrdp" ]; then SRV="xrdp"
-          else echo "Unknown protocol: $PROTO" && exit 1; fi
+          else echo "Unknown protocol" && exit 1
 
-          echo "FROM ubuntu:22.04
+          echo "
+          FROM ubuntu:22.04
           ENV DEBIAN_FRONTEND=noninteractive
           RUN apt-get update && \
               apt-get install -y $DE $SRV sudo && \
@@ -61,32 +67,31 @@ jobs:
               echo 'linuxuser:Ab@1234' | chpasswd && \
               echo 'root:Ab@1234' | chpasswd && \
               usermod -aG sudo linuxuser
-
           COPY entrypoint.sh /entrypoint.sh
           RUN chmod +x /entrypoint.sh
-
           ENTRYPOINT [\"/entrypoint.sh\"]" > Dockerfile
 
           echo "#!/bin/bash
           set -e
-
           if [ \"\$1\" = \"vnc\" ]; then
             su - linuxuser -c \"vncserver :1 -geometry 1280x720\"
           elif [ \"\$1\" = \"xrdp\" ]; then
             service xrdp start || xrdp-sesman &
           fi
-
           tail -f /dev/null" > entrypoint.sh
 
           docker build -t "$TAG" .
 
-      - name: Save Docker image as TAR
+      - name: Save Docker image as .tar
         run: |
-          mkdir -p output
-          docker save "$TAG" -o "output/$TAG.tar"
+          mkdir -p tars
+          docker save "$TAG" -o "tars/$TAG.tar"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.TAG }}
-          path: output/${{ env.TAG }}.tar
+      - name: Track with Git LFS and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git lfs track "tars/$TAG.tar"
+          git add .gitattributes tars/$TAG.tar
+          git commit -m "Add $TAG Docker image as LFS object"
+          git push

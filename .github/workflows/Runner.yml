@@ -1,0 +1,65 @@
+name: Run GUI Image with Bore Tunnel
+
+on:
+  workflow_dispatch:
+    inputs:
+      gui:
+        description: "Select Desktop Environment"
+        required: true
+        type: choice
+        options:
+          - xfce
+          - kde
+          - gnome
+          - mate
+          - cinnamon
+          - lxqt
+      protocol:
+        description: "Select Remote Protocol"
+        required: true
+        type: choice
+        options:
+          - vnc
+          - xrdp
+
+jobs:
+  run-container:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TAG }}
+          path: ./images
+
+      - name: Load Docker image
+        run: docker load -i images/${{ env.TAG }}.tar
+
+      - name: Run container with GUI service
+        run: |
+          PORT=$([ "${{ github.event.inputs.protocol }}" = "vnc" ] && echo 5901 || echo 3389)
+
+          docker run -d --rm --name gui-runner \
+            -p $PORT:$PORT \
+            $TAG ${{ github.event.inputs.protocol }}
+
+          echo "Container $TAG started and listening on port $PORT"
+
+      - name: Install Bore
+        run: npm install -g bore
+
+      - name: Tunnel port via Bore
+        run: |
+          PORT=$([ "${{ github.event.inputs.protocol }}" = "vnc" ] && echo 5901 || echo 3389)
+          echo "Forwarding port $PORT via bore.pub..."
+          nohup bore --port $PORT --to bore.pub > bore.log 2>&1 &
+          

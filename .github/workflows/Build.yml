@@ -11,6 +11,9 @@ on:
           - xfce
           - kde
           - gnome
+          - mate
+          - cinnamon
+          - lxqt
       protocol:
         description: "Choose Remote Protocol"
         required: true
@@ -22,50 +25,68 @@ on:
 jobs:
   build-upload:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    env:
+      TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build selected desktop image
-      run: |
-        GUI=${{ github.event.inputs.gui }}
-        PROTO=${{ github.event.inputs.protocol }}
-        TAG="$GUI-$PROTO"
+      - name: Build Docker image
+        run: |
+          GUI="${{ github.event.inputs.gui }}"
+          PROTO="${{ github.event.inputs.protocol }}"
+          TAG="$GUI-$PROTO"
 
-        if [ "$GUI" = "xfce" ]; then DE="xfce4"
-        elif [ "$GUI" = "kde" ]; then DE="kde-plasma-desktop"
-        elif [ "$GUI" = "gnome" ]; then DE="ubuntu-desktop"
-        fi
+          if [ "$GUI" = "xfce" ]; then DE="xfce4"
+          elif [ "$GUI" = "kde" ]; then DE="kde-plasma-desktop"
+          elif [ "$GUI" = "gnome" ]; then DE="ubuntu-desktop"
+          elif [ "$GUI" = "mate" ]; then DE="mate-desktop-environment"
+          elif [ "$GUI" = "cinnamon" ]; then DE="cinnamon"
+          elif [ "$GUI" = "lxqt" ]; then DE="lxqt"
+          else echo "Unknown GUI: $GUI" && exit 1; fi
 
-        if [ "$PROTO" = "vnc" ]; then SERVER="tigervnc-standalone-server"
-        else SERVER="xrdp"
-        fi
+          if [ "$PROTO" = "vnc" ]; then SRV="tigervnc-standalone-server"
+          elif [ "$PROTO" = "xrdp" ]; then SRV="xrdp"
+          else echo "Unknown protocol: $PROTO" && exit 1; fi
 
-        echo "Building image: $TAG with $DE and $SERVER"
+          echo "FROM ubuntu:22.04
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update && \
+              apt-get install -y $DE $SRV sudo && \
+              useradd -m linuxuser && \
+              echo 'linuxuser:Ab@1234' | chpasswd && \
+              echo 'root:Ab@1234' | chpasswd && \
+              usermod -aG sudo linuxuser
 
-        echo "
-        FROM ubuntu:22.04
-        ENV DEBIAN_FRONTEND=noninteractive
-        RUN apt-get update && \
-            apt-get install -y $DE $SERVER && \
-            apt-get clean && rm -rf /var/lib/apt/lists/*
-        CMD [\"tail\", \"-f\", \"/dev/null\"]
-        " | docker build -t "$TAG" -f - .
+          COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
 
-    - name: Save image as TAR
-      run: |
-        TAG=${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
-        mkdir -p output
-        docker save "$TAG" -o "output/$TAG.tar"
+          ENTRYPOINT [\"/entrypoint.sh\"]" > Dockerfile
 
-    - name: Upload TAR as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: gui-docker-image
-        path: output/$TAG.tar
+          echo "#!/bin/bash
+          set -e
+
+          if [ \"\$1\" = \"vnc\" ]; then
+            su - linuxuser -c \"vncserver :1 -geometry 1280x720\"
+          elif [ \"\$1\" = \"xrdp\" ]; then
+            service xrdp start || xrdp-sesman &
+          fi
+
+          tail -f /dev/null" > entrypoint.sh
+
+          docker build -t "$TAG" .
+
+      - name: Save Docker image as TAR
+        run: |
+          mkdir -p output
+          docker save "$TAG" -o "output/$TAG.tar"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAG }}
+          path: output/${{ env.TAG }}.tar

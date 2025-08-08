@@ -1,0 +1,54 @@
+name: Build All GUI Images (One-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create build context
+        run: mkdir -p tars
+
+      - name: Build all images
+        run: |
+          declare -A combos=(
+            [xfce-vnc]="xfce4 tigervnc-standalone-server"
+            [xfce-xrdp]="xfce4 xrdp"
+            [kde-vnc]="kde-plasma-desktop tigervnc-standalone-server"
+            [kde-xrdp]="kde-plasma-desktop xrdp"
+            [gnome-vnc]="ubuntu-desktop tigervnc-standalone-server"
+            [gnome-xrdp]="ubuntu-desktop xrdp"
+          )
+
+          for combo in "${!combos[@]}"; do
+            echo "Building image: $combo"
+            packages="${combos[$combo]}"
+            docker build -t $combo - <<EOF
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y $packages && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+CMD ["tail", "-f", "/dev/null"]
+EOF
+            echo "Saving $combo to tars/$combo.tar"
+            docker save $combo -o tars/$combo.tar
+          done
+
+      - name: Commit tar files to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tars/*.tar
+          git commit -m "Prebuilt GUI desktop images (tar)"
+          git push
+          

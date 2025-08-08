@@ -1,4 +1,4 @@
-name: Build and Upload One GUI Image
+name: Build and Upload One GUI Image as Artifact
 
 on:
   workflow_dispatch:
@@ -38,14 +38,13 @@ jobs:
         PROTO=${{ github.event.inputs.protocol }}
         TAG="$GUI-$PROTO"
 
-        # Select packages based on combo
         if [ "$GUI" = "xfce" ]; then DE="xfce4"
         elif [ "$GUI" = "kde" ]; then DE="kde-plasma-desktop"
         elif [ "$GUI" = "gnome" ]; then DE="ubuntu-desktop"
         fi
 
-        if [ "$PROTO" = "vnc" ]; then SERVER="tigervnc-standalone-server"; PORT=5901
-        else SERVER="xrdp"; PORT=3389
+        if [ "$PROTO" = "vnc" ]; then SERVER="tigervnc-standalone-server"
+        else SERVER="xrdp"
         fi
 
         echo "Building image: $TAG with $DE and $SERVER"
@@ -65,11 +64,8 @@ jobs:
         mkdir -p output
         docker save "$TAG" -o "output/$TAG.tar"
 
-    - name: Upload TAR to GitHub Release
-      uses: softprops/action-gh-release@v2
+    - name: Upload TAR as Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: "gui-images"
-        tag_name: gui-images
-        files: output/*.tar
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: gui-docker-image
+        path: output/$TAG.tar

@@ -29,37 +29,28 @@ jobs:
       TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout Repo with LFS
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
-      - name: Set up Docker
+      - name: Install Docker
         uses: docker/setup-buildx-action@v3
 
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.TAG }}
-          path: ./images
+      - name: Load Docker image from tar
+        run: |
+          docker load -i tars/${{ env.TAG }}.tar
 
-      - name: Load Docker image
-        run: docker load -i images/${{ env.TAG }}.tar
-
-      - name: Run container with GUI service
+      - name: Run container with correct port and service
         run: |
           PORT=$([ "${{ github.event.inputs.protocol }}" = "vnc" ] && echo 5901 || echo 3389)
-
-          docker run -d --rm --name gui-runner \
-            -p $PORT:$PORT \
-            $TAG ${{ github.event.inputs.protocol }}
-
-          echo "Container $TAG started and listening on port $PORT"
+          docker run -d --rm --name gui-runner -p $PORT:$PORT $TAG ${{ github.event.inputs.protocol }}
+          echo "Launched container $TAG on port $PORT"
 
       - name: Install Bore
         run: npm install -g bore
 
-      - name: Tunnel port via Bore
+      - name: Tunnel with Bore
         run: |
           PORT=$([ "${{ github.event.inputs.protocol }}" = "vnc" ] && echo 5901 || echo 3389)
-          echo "Forwarding port $PORT via bore.pub..."
           nohup bore --port $PORT --to bore.pub > bore.log 2>&1 &
-          

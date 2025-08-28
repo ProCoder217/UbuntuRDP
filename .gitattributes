@@ -1,1 +1,1 @@
-tars/xfce-vnc.tar filter=lfs diff=lfs merge=lfs -text
+*.tar filter=lfs diff=lfs merge=lfs -text

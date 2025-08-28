@@ -1,110 +1,84 @@
-name: Build and Commit One GUI Image via LFS
+name: "🏗️ Build Image to Branch (with Git LFS)"
 
 on:
   workflow_dispatch:
     inputs:
-      gui:
-        description: "Choose Desktop Environment"
-        required: true
-        type: choice
-        options:
-          - xfce
-          - kde
-          - gnome
-          - mate
-          - cinnamon
-          - lxqt
       protocol:
-        description: "Choose Remote Protocol"
+        description: 'Remote Desktop Protocol'
         required: true
         type: choice
         options:
-          - vnc
-          - xrdp
+        - xrdp
+        - vnc
+      desktop_environment:
+        description: 'Desktop Environment (DE)'
+        required: true
+        type: choice
+        options:
+        - xfce
+        - gnome
+        - kde
+        - mate
+        - cinnamon
+        - lxqt
 
 jobs:
-  build-commit:
+  build-and-commit:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.inputs.gui }}-${{ github.event.inputs.protocol }}
-
+    permissions:
+      contents: write
+      
     steps:
-      - name: Checkout repository with LFS
+      - name: ⬇️ Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
-      - name: Set up Git LFS
-        run: git lfs install
-
-      - name: Set up Docker Buildx
+      - name: 🛠️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: 📦 Build Docker image locally
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true 
+          tags: local-desktop:${{ github.event.inputs.protocol }}-${{ github.event.inputs.desktop_environment }}
+          build-args: |
+            PROTOCOL=${{ github.event.inputs.protocol }}
+            DESKTOP_ENV=${{ github.event.inputs.desktop_environment }}
+
+      - name: 💾 Save Docker image to a tarball
         run: |
-          GUI="${{ github.event.inputs.gui }}"
-          PROTO="${{ github.event.inputs.protocol }}"
-          TAG="$GUI-$PROTO"
+          docker save -o image.tar local-desktop:${{ github.event.inputs.protocol }}-${{ github.event.inputs.desktop_environment }}
+          echo "Image saved as image.tar"
+          ls -lh image.tar
 
-          if [ "$GUI" = "xfce" ]; then DE="xfce4"
-          elif [ "$GUI" = "kde" ]; then DE="kde-plasma-desktop"
-          elif [ "$GUI" = "gnome" ]; then DE="ubuntu-desktop"
-          elif [ "$GUI" = "mate" ]; then DE="mate-desktop-environment"
-          elif [ "$GUI" = "cinnamon" ]; then DE="cinnamon"
-          elif [ "$GUI" = "lxqt" ]; then DE="lxqt"
-          else
-            echo "Unknown GUI: $GUI"
-            exit 1
-          fi
-
-          if [ "$PROTO" = "vnc" ]; then SRV="tigervnc-standalone-server"
-          elif [ "$PROTO" = "xrdp" ]; then SRV="xrdp"
-          else
-            echo "Unknown Protocol: $PROTO"
-            exit 1
-          fi
-
-          echo "Building image: $TAG with $DE and $SRV"
-
-          # Write Dockerfile using here-document
-          cat <<EOF > Dockerfile
-          FROM ubuntu:22.04
-          ENV DEBIAN_FRONTEND=noninteractive
-          RUN apt-get update && \\
-              apt-get install -y $DE $SRV sudo && \\
-              useradd -m linuxuser && \\
-              echo 'linuxuser:Ab@1234' | chpasswd && \\
-              echo 'root:Ab@1234' | chpasswd && \\
-              usermod -aG sudo linuxuser
-          COPY entrypoint.sh /entrypoint.sh
-          RUN chmod +x /entrypoint.sh
-          ENTRYPOINT ["/entrypoint.sh"]
-          EOF
-
-          # Write entrypoint.sh using here-document
-          cat <<'EOF' > entrypoint.sh
-          #!/bin/bash
+      - name: 🚀 Commit image.tar to branch using Git LFS
+        run: |
           set -e
-          if [ "$1" = "vnc" ]; then
-            su - linuxuser -c "vncserver :1 -geometry 1280x720"
-          elif [ "$1" = "xrdp" ]; then
-            service xrdp start || (xrdp-sesman &)
-          fi
-          tail -f /dev/null
-          EOF
-
-          docker build -t "$TAG" .
-
-      - name: Save Docker image as tarball
-        run: |
-          mkdir -p tars
-          docker save "$TAG" -o "tars/$TAG.tar"
-
-      - name: Track tarball with Git LFS and commit
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git lfs track "tars/$TAG.tar"
-          git add .gitattributes tars/$TAG.tar
-          git commit -m "Add Docker image $TAG as LFS object"
-          git push
+          BRANCH_NAME="images/${{ github.event.inputs.protocol }}-${{ github.event.inputs.desktop_environment }}"
+          
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ../repo-temp
+          cd ../repo-temp
+          
+          # Install and configure Git LFS in our temporary clone
+          git lfs install
+          
+          git checkout -B $BRANCH_NAME
+          
+          # Remove any old files
+          git rm -rf . --ignore-unmatch
+          
+          # Move the new image tarball into the repo
+          mv ../${{ github.workspace }}/image.tar .
+          
+          # Ensure .gitattributes is present and add all files
+          # The .gitattributes from your main branch will be used if it exists
+          git add .
+          
+          git commit -m "Update image for ${{ github.event.inputs.protocol }}-${{ github.event.inputs.desktop_environment }}"
+          git push --force origin $BRANCH_NAME
+          
+          echo "✅ Image pushed successfully to LFS on branch: $BRANCH_NAME"
